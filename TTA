@@ -1,0 +1,253 @@
+\section{Python code and result}
+\lstdefinestyle{pythonStyle}{
+    language=Python,
+    basicstyle=\ttfamily\small,
+    keywordstyle=\color{blue},
+    commentstyle=\color{green!60!black},
+    stringstyle=\color{orange},
+    showstringspaces=false,
+    numbers=left,
+    numberstyle=\tiny,
+    numbersep=5pt,
+    frame=single,
+    breaklines=true,
+    breakatwhitespace=true,
+    tabsize=4,
+}
+\begin{lstlisting}[style=pythonStyle, caption={Python Code for the Basic TTA Mathematical Model }, label=python_code]
+ 
+import pulp
+import pandas as pd
+
+def read_parameters_from_excel(file_path):
+    data = pd.read_excel(file_path, index_col=0)  # Assuming the first column contains the order numbers
+    parameters = {
+        "PR": data["PR"].values[0],
+        "AT": data["AT"].values[0],
+        "P": data["P"].tolist(),
+        "alpha": data["alpha"].values[0],
+        "beta": data["beta"].values[0],
+        "gamma": data["gamma"].values[0],
+        "delta": data["delta"].values[0],
+        "N": data["N"].tolist(),
+        "T_pd": data["T_pd"].tolist(),
+        "T_pr": data["T_pr"].tolist(),
+        "T_bl": data["T_bl"].tolist(),
+        "T_sc": data["T_sc"].tolist(),
+        "PD": data["PD"].tolist(),
+    }
+    return parameters
+
+def solve_optimization_model(parameters):
+    # Create a linear programming problem
+    model = pulp.LpProblem(name="Mass_Customization_Optimization", sense=pulp.LpMaximize)
+
+    # Decision variables: X_i (binary)
+    n = len(parameters["P"])
+    X = {i: pulp.LpVariable(name=f"X_{i}", cat=pulp.LpBinary) for i in range(1, n + 1)}
+
+    # Parameters
+    PR = parameters["PR"]
+    AT = parameters["AT"]
+    alpha = parameters["alpha"]
+    beta = parameters["beta"]
+    gamma = parameters["gamma"]
+    delta = parameters["delta"]
+    N = parameters["N"]
+    T_pd = parameters["T_pd"]
+    T_pr = parameters["T_pr"]
+    T_bl = parameters["T_bl"]
+    T_sc = parameters["T_sc"]
+    PD = parameters["PD"]
+    P = parameters["P"]
+
+    # Check if the lengths of lists N and P match the expected number of orders n
+    if len(N) != n or len(P) != n:
+        print("Error: The length of list N or P does not match the expected number of orders.")
+        return
+
+    # Objective function
+    model += pulp.lpSum(X[i] * (N[i-1] * P[i-1] - (alpha * T_pd[i-1] + beta * T_pr[i-1] + gamma * T_bl[i-1] + delta * T_sc[i-1])) for i in range(1, n + 1))
+
+    # Constraints
+    model += pulp.lpSum(N[i-1] * X[i] for i in range(1, n + 1)) >= PR
+    model += pulp.lpSum(X[i] * (T_pd[i-1] + T_pr[i-1] + T_bl[i-1] + T_sc[i-1]) for i in range(1, n + 1)) <= AT
+    for i in range(1, n + 1):
+       model += X[i]*(T_pd[i-1] + T_pr[i-1] + T_bl[i-1] + T_sc[i-1]) <= PD[i-1]
+
+    # Solve the optimization problem
+    model.solve()
+
+    # Check the status of the solution
+    if pulp.LpStatus[model.status] == "Optimal":
+        print("Optimal Solution Found:")
+        for i in range(1, n + 1):
+            if X[i].value() == 1:
+                print(f"Order {i} is accepted with {N[i-1]} products. The resource usage is { (alpha * T_pd[i-1] + beta * T_pr[i-1] + gamma * T_bl[i-1] + delta * T_sc[i-1])}. Available days after TTA is { PD[i-1]-(T_pd[i-1] + T_pr[i-1] +T_bl[i-1]+ T_sc[i-1])}")
+            elif PD[i-1]-(T_pd[i-1] + T_pr[i-1] +T_bl[i-1]+ T_sc[i-1])<0:
+                print(f"Order {i} is lost order. ")
+            else:
+              print(f"Order {i} is not accepted yet. Available days is { PD[i-1]}.")
+    else:
+        print("No optimal solution found.")
+
+    # Print the total profit
+    total_profit = pulp.lpSum(X[i].value() * (N[i-1] *P[i-1] - (alpha * T_pd[i-1] + beta * T_pr[i-1] + gamma * T_bl[i-1] + delta * T_sc[i-1])) for i in range(1, n + 1))
+    print(f"Total Profit: {total_profit.value()}")
+
+    # Print the total Resource Usage
+    total_Resource_usage = pulp.lpSum(X[i].value() * (T_pd[i-1] + T_pr[i-1] +T_bl[i-1]+ T_sc[i-1]) for i in range(1, n + 1))
+    print(f"Total Available Resource is {AT} and", f"Total Resource Usage is {total_Resource_usage.value()}")
+
+     # Print the total Products available
+    Total_Products_available = pulp.lpSum(X[i].value() * N[i-1]  for i in range(1, n + 1))
+    print(f"The production rate is {PR} and",  f"Total Products available is {Total_Products_available.value()}")
+
+
+if __name__ == "__main__":
+    file_path = "test_problem_n10.xlsx"
+    parameters = read_parameters_from_excel(file_path)
+    solve_optimization_model(parameters)
+
+
+\end{lstlisting}
+
+
+Output: \\
+Optimal Solution Found:\\
+Order ; status   ;   $N$  ;   \TTA-time  ; $PD$  ;\TTA-cost  ; Profit \\
+Order 1 Accepted 9 0 0 0 15000\\
+Order 2 Lost 7 3 1 1200 18000\\
+Order 3 Accepted 3 3 3 1440 15000\\
+Order 4 Accepted 4 4 8 2240 10000\\
+Order 5 Accepted 6 5 9 2640 16000\\
+Order 6 Lost 3 7 2 3040 13000\\
+Order 7 Lost 2 8 6 3680 10000\\
+Order 8 Not Accepted 2 7 9 3280 15000\\
+Order 9 Lost 4 4 1 2560 10000\\
+Order 10 Accepted 9 11 12 5920 25000\\
+Total Profit: 528760.0\\
+Total Available Resource is 25 and Total Resource Usage is 23.0\\
+The production rate is 30 and Total Products available is 31.0\\
+
+
+
+
+
+\lstdefinestyle{pythonStyle}{
+    language=Python,
+    basicstyle=\ttfamily\small,
+    keywordstyle=\color{blue},
+    commentstyle=\color{green!60!black},
+    stringstyle=\color{orange},
+    showstringspaces=false,
+    numbers=left,
+    numberstyle=\tiny,
+    numbersep=5pt,
+    frame=single,
+    breaklines=true,
+    breakatwhitespace=true,
+    tabsize=4,
+}
+\begin{lstlisting}[style=pythonStyle, caption={ Python Code for selecting activities model in A2}, label=python_code1]
+ 
+
+import pulp
+import pandas as pd
+
+def read_parameters_from_excel(file_path):
+    data = pd.read_excel(file_path, index_col=0)  # Assuming the first column contains the order numbers
+    parameters = {
+        "PR": data["PR"].values[0],
+        "AT": data["AT"].values[0],
+        "P": data["P"].tolist(),
+        "alpha": data["alpha"].values[0],
+        "beta": data["beta"].values[0],
+        "gamma": data["gamma"].values[0],
+        "delta": data["delta"].values[0],
+        "N": data["N"].tolist(),
+        "T_pd": data["T_pd"].tolist(),
+        "T_pr": data["T_pr"].tolist(),
+        "T_bl": data["T_bl"].tolist(),
+        "T_sc": data["T_sc"].tolist(),
+        "PD": data["PD"].tolist(),
+        "O_ij": data.iloc[:, 14:18].values.tolist(),  # Assuming the action parameters are in columns 14 to 17
+    }
+    return parameters
+
+def solve_optimization_model(parameters):
+    # Create a linear programming problem
+    model = pulp.LpProblem(name="Mass_Customization_Optimization", sense=pulp.LpMaximize)
+
+    # Decision variables: X_ij (binary)
+    n = len(parameters["P"])
+    m = len(parameters["O_ij"][0])
+    X = {(i, j): pulp.LpVariable(name=f"X_{i}_{j}", cat=pulp.LpBinary) for i in range(1, n + 1) for j in range(1, m + 1)}
+
+    # Parameters
+    PR = parameters["PR"]
+    AT = parameters["AT"]
+    alpha = parameters["alpha"]
+    beta = parameters["beta"]
+    gamma = parameters["gamma"]
+    delta = parameters["delta"]
+    N = parameters["N"]
+    T_pd = parameters["T_pd"]
+    T_pr = parameters["T_pr"]
+    T_bl = parameters["T_bl"]
+    T_sc = parameters["T_sc"]
+    PD = parameters["PD"]
+    P = parameters["P"]
+    O_ij = parameters["O_ij"]
+
+    # Check if the lengths of lists N and P match the expected number of orders n
+    if len(N) != n or len(P) != n:
+        print("Error: The length of list N or P does not match the expected number of orders.")
+        return
+
+    # Objective function
+    model += pulp.lpSum(N[i-1] * P[i-1] * X[i, j] for i in range(1, n + 1) for j in range(1, m + 1)) \
+             - pulp.lpSum(alpha * T_pd[i-1] * X[i, 1] + beta * T_pr[i-1] * X[i, 2] +
+                           gamma * T_bl[i-1] * X[i, 3] + delta * T_sc[i-1] * X[i, 4]
+                           for i in range(1, n + 1))
+
+    # Constraints
+    for i in range(1, n + 1):
+        model += pulp.lpSum(N[i-1] * X[i, j] for j in range(1, m + 1)) >= PR
+        model += pulp.lpSum(X[i, 1] * T_pd[i-1] + X[i, 2] * T_pr[i-1] +
+                            X[i, 3] * T_bl[i-1] + X[i, 4] * T_sc[i-1]) <= PD[i-1]
+        for j in range(1, m + 1):
+            model += X[i, j] <= O_ij[i-1][j-1]
+
+    # Solve the optimization problem
+    model.solve()
+
+    # Check the status of the solution and print results
+    if pulp.LpStatus[model.status] == "Optimal":
+        print("Optimal Solution Found:")
+        print("Order  status      N      TTA_time   PD  TTA_cost  Profit ")
+        for i in range(1, n + 1):
+            for j in range(1, m + 1):
+                if X[i, j].value() == 1:
+                    print(f"Order {i} Accepted using action {j} {N[i-1]} "
+                          f"{T_pd[i-1] + T_pr[i-1] + T_bl[i-1] + T_sc[i-1]} "
+                          f"{PD[i-1]} {(alpha * T_pd[i-1] + beta * T_pr[i-1] + gamma * T_bl[i-1] + delta * T_sc[i-1])} "
+                          f"{P[i-1]}")
+    else:
+        print("No optimal solution found.")
+
+    # Print the total profit, total resource usage, and total products available
+    total_profit = pulp.lpSum(N[i-1] * P[i-1] * X[i, j].value() for i in range(1, n + 1) for j in range(1, m + 1))
+    total_resource_usage = pulp.lpSum((T_pd[i-1] + T_pr[i-1] + T_bl[i-1] + T_sc[i-1]) * X[i, j].value()
+                                      for i in range(1, n + 1) for j in range(1, m + 1))
+    total_products_available = pulp.lpSum(N[i-1] * X[i, j].value() for i in range(1, n + 1) for j in range(1, m + 1))
+    print(f"Total Profit: {total_profit.value()}")
+    print(f"Total Available Resource: {AT}, Total Resource Usage: {total_resource_usage.value()}")
+    print(f"The Production Rate: {PR}, Total Products Available: {total_products_available.value()}")
+
+if __name__ == "__main__":
+    file_path = "test_problem_n10_variation.xlsx"
+    parameters = read_parameters_from_excel(file_path)
+    solve_optimization_model(parameters)
+
+\end{lstlisting}
